@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Investment Tracker</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel CDN for JSX transformation in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Supabase CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <style>
+        /* Custom styles for the Inter font and overall aesthetics */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f2f5; /* Light grey background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff; /* White background for the card */
+            border-radius: 16px; /* More rounded corners */
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); /* Soft shadow */
+            padding: 30px;
+            text-align: center;
+            max-width: 400px; /* Adjusted for better single-column layout on smaller screens */
+            width: 100%;
+            border: 1px solid #e0e0e0; /* Subtle border */
+        }
+        @media (min-width: 768px) { /* Adjust max-width for larger screens */
+            .container {
+                max-width: 960px;
+            }
+        }
+        .price-group {
+            margin-bottom: 20px;
+        }
+        .price-display {
+            font-size: 2.2rem; /* Slightly smaller font for two prices */
+            font-weight: 700; /* Bold price */
+            color: #1a202c; /* Dark text for price */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px; /* Space between currency symbol and price */
+        }
+        .price-label {
+            font-size: 1rem; /* Slightly smaller label */
+            color: #4a5568; /* Medium grey for label */
+            margin-bottom: 5px; /* Less space between label and price */
+        }
+        .last-updated {
+            font-size: 0.9rem;
+            color: #718096; /* Lighter grey for timestamp */
+            margin-top: 20px;
+        }
+        .refresh-button {
+            background-color: #4CAF50; /* Green button */
+            color: white;
+            padding: 12px 25px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            box-shadow: 0 4px 10px rgba(76, 175, 80, 0.3);
+        }
+        .refresh-button:hover {
+            background-color: #45a049; /* Darker green on hover */
+            transform: translateY(-2px); /* Slight lift effect */
+        }
+        .error-message {
+            color: #e53e3e; /* Red for error messages */
+            font-size: 0.9rem;
+            margin-top: 15px;
+        }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4CAF50;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Table specific styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e2e8f0;
+        }
+        th {
+            background-color: #f8f8f8;
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+        tr:last-child td {
+            border-bottom: 0;
+        }
+        tbody tr:hover {
+            background-color: #edf2f7;
+        }
+        .overflow-x-auto {
+            overflow-x: auto;
+        }
+        .delete-button {
+            background-color: #ef4444; /* Red for delete */
+            color: white;
+            padding: 6px 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: background-color 0.3s ease;
+        }
+        .delete-button:hover {
+            background-color: #dc2626; /* Darker red on hover */
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // Supabase Client Configuration
+        const SUPABASE_URL = 'https://vqaqiwfkwtgkbcccmhag.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZxYXFpd2Zrd3Rna2JjY2NtaGFnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI3MTYwNTYsImV4cCI6MjA2ODI5MjA1Nn0.swbrvzUL0VxumglJO0153qAK7A_VM-Gx6j6X7TZ51Do';
+        
+        // Main App Component
+        const App = () => {
+            const { useState, useEffect, useCallback } = React;
+
+            // State for Supabase client instance
+            const [supabaseClient, setSupabaseClient] = useState(null);
+
+            // State for real-time prices
+            const [usdPrice, setUsdPrice] = useState('N/A');
+            const [nzdPrice, setNzdPrice] = useState('N/A');
+            const [lastUpdated, setLastUpdated] = useState('N/A');
+            const [priceLoading, setPriceLoading] = useState(true);
+            const [priceError, setPriceError] = useState('');
+
+            // State for buying records
+            const [buyingRecords, setBuyingRecords] = useState([]);
+            const [recordLoading, setRecordLoading] = useState(true);
+            const [recordError, setRecordError] = useState('');
+            const [newNzdSpent, setNewNzdSpent] = useState('');
+            const [newBtcAmount, setNewBtcAmount] = useState('');
+
+            // State for investment summary
+            const [totalNzdSpent, setTotalNzdSpent] = useState(0);
+            const [currentValueNzd, setCurrentValueNzd] = useState(0);
+            const [gainLossPercentage, setGainLossPercentage] = useState(0);
+
+            // State for Supabase user ID (kept for potential future RLS re-enablement or tracking)
+            const [userId, setUserId] = useState(null);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+
+            // Effect for Supabase Client Initialization and Authentication
+            useEffect(() => {
+                console.log("[INIT] Starting Supabase client and auth initialization...");
+
+                // Function to wait for Supabase library to load
+                const waitForSupabase = () => {
+                    return new Promise((resolve, reject) => {
+                        if (window.Supabase) {
+                            console.log("[INIT] Supabase library already loaded.");
+                            resolve(window.Supabase);
+                            return;
+                        }
+
+                        let attempts = 0;
+                        const maxAttempts = 100; // Increased to 10 seconds total wait time (100 * 100ms)
+                        const intervalTime = 100; // Check every 100ms
+
+                        const interval = setInterval(() => {
+                            if (window.Supabase) {
+                                clearInterval(interval);
+                                console.log("[INIT] Supabase library loaded after delay.");
+                                resolve(window.Supabase);
+                            } else if (attempts >= maxAttempts) {
+                                clearInterval(interval);
+                                console.error(`[INIT ERROR] Supabase library did not load within expected time (${maxAttempts * intervalTime}ms).`);
+                                reject(new Error("Supabase library failed to load."));
+                            }
+                            attempts++;
+                        }, intervalTime);
+                    });
+                };
+
+                const initializeClientAndAuth = async () => {
+                    try {
+                        const SupabaseGlobal = await waitForSupabase();
+                        console.log("[INIT] Creating Supabase client instance.");
+                        const client = SupabaseGlobal.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+                        setSupabaseClient(client);
+
+                        console.log("[INIT] Attempting user authentication.");
+                        const { data: { user }, error: authError } = await client.auth.getUser();
+                        
+                        if (authError && authError.message !== 'Auth session not found!') {
+                            console.warn("[AUTH] Supabase get user failed (not a session not found error):", authError);
+                        }
+
+                        if (user) {
+                            setUserId(user.id);
+                            console.log("[AUTH] Authenticated as existing user:", user.id);
+                        } else {
+                            console.log("[AUTH] No existing user, attempting anonymous sign-in.");
+                            const { data: signInData, error: signInError } = await client.auth.signInAnonymously();
+                            if (signInError) {
+                                console.error("[AUTH ERROR] Supabase anonymous sign-in failed:", signInError);
+                                setRecordError(`Authentication failed: ${signInError.message}`);
+                            } else if (signInData.user) {
+                                setUserId(signInData.user.id);
+                                console.log("[AUTH] Signed in anonymously as:", signInData.user.id);
+                            }
+                        }
+                    } catch (e) {
+                        console.error("[GLOBAL ERROR] An error occurred during Supabase initialization or authentication:", e);
+                        setRecordError(`Critical error during setup: ${e.message}. Check console for details.`);
+                    } finally {
+                        console.log("[INIT] Setting isAuthReady to true.");
+                        setIsAuthReady(true); // Always mark authentication as ready to unblock UI
+                    }
+                };
+
+                initializeClientAndAuth();
+
+                // No explicit cleanup needed for onAuthStateChange here as it's part of the client lifecycle
+                // and the component will unmount if the page navigates.
+            }, []); // Empty dependency array means this runs once on mount
+
+            // Function to fetch current Bitcoin price in USD and NZD
+            const fetchCurrentBitcoinPrice = useCallback(async () => {
+                setPriceLoading(true);
+                setPriceError('');
+                try {
+                    const apiUrl = 'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd,nzd';
+                    const response = await fetch(apiUrl);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    const data = await response.json();
+                    if (data && data.bitcoin) {
+                        const usd = data.bitcoin.usd;
+                        const nzd = data.bitcoin.nzd;
+                        setUsdPrice(usd !== undefined ? usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A');
+                        setNzdPrice(nzd !== undefined ? nzd.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A');
+                        setLastUpdated(new Date().toLocaleTimeString('en-GB'));
+                    } else {
+                        throw new Error('Could not retrieve Bitcoin prices from the API.');
+                    }
+                } catch (error) {
+                    console.error('Error fetching current Bitcoin price:', error);
+                    setPriceError(`Failed to fetch current price: ${error.message}.`);
+                    setUsdPrice('N/A');
+                    setNzdPrice('N/A');
+                    setLastUpdated('N/A');
+                } finally {
+                    setPriceLoading(false);
+                }
+            }, []);
+
+            // Effect to fetch initial data on component mount and when auth is ready
+            useEffect(() => {
+                if (isAuthReady) {
+                    console.log("[EFFECT] Auth is ready, fetching current Bitcoin price.");
+                    fetchCurrentBitcoinPrice();
+                }
+            }, [isAuthReady, fetchCurrentBitcoinPrice]);
+
+            // Function to fetch buying records from Supabase
+            const fetchBuyingRecords = useCallback(async () => {
+                if (!supabaseClient) {
+                    console.log("[FETCH RECORDS] Supabase client not ready for fetching records.");
+                    return; // Only fetch if supabaseClient is available
+                }
+
+                setRecordLoading(true);
+                setRecordError('');
+
+                try {
+                    // RLS is disabled, so no user_id filter needed. Fetch all records.
+                    const { data: records, error } = await supabaseClient
+                        .from('btc_records')
+                        .select('*')
+                        .order('date', { ascending: false });
+
+                    if (error) throw error;
+
+                    let totalBtc = 0;
+                    let totalNzd = 0;
+
+                    records.forEach(record => {
+                        totalBtc += parseFloat(record.btc_amount || 0);
+                        totalNzd += parseFloat(record.nzd_spent || 0);
+                    });
+
+                    setBuyingRecords(records);
+                    setTotalNzdSpent(totalNzd);
+
+                    // Calculate current value and gain/loss
+                    const currentNzdValue = parseFloat(nzdPrice.replace(/,/g, '')) || 0;
+                    const currentVal = totalBtc * currentNzdValue;
+                    setCurrentValueNzd(currentVal);
+
+                    if (totalNzd > 0) {
+                        const percentage = ((currentVal - totalNzd) / totalNzd) * 100;
+                        setGainLossPercentage(percentage);
+                    } else {
+                        setGainLossPercentage(0);
+                    }
+
+                    setRecordLoading(false);
+                    console.log("[FETCH RECORDS] Buying records fetched and summary updated.");
+                } catch (error) {
+                    console.error("[FETCH RECORDS ERROR] Error fetching buying records:", error);
+                    setRecordError(`Failed to load records: ${error.message}.`);
+                    setRecordLoading(false);
+                }
+            }, [nzdPrice, supabaseClient]); // Re-run if nzdPrice or supabaseClient changes
+
+            // Effect to trigger fetching records when auth is ready and supabaseClient is set
+            useEffect(() => {
+                if (isAuthReady && supabaseClient) {
+                    console.log("[EFFECT] Auth and Supabase client ready, fetching buying records.");
+                    fetchBuyingRecords();
+                }
+            }, [isAuthReady, supabaseClient, fetchBuyingRecords]);
+
+
+            // Handle adding a new buying record
+            const handleAddRecord = async () => {
+                if (!supabaseClient) {
+                    setRecordError('Supabase client not ready. Please wait.');
+                    return;
+                }
+                const nzdSpentNum = parseFloat(newNzdSpent);
+                const btcAmountNum = parseFloat(newBtcAmount);
+
+                if (isNaN(nzdSpentNum) || isNaN(btcAmountNum) || nzdSpentNum <= 0 || btcAmountNum <= 0) {
+                    setRecordError('Please enter valid positive numbers for NZD spent and BTC amount.');
+                    return;
+                }
+
+                setRecordLoading(true);
+                setRecordError('');
+
+                try {
+                    // Calculate USD price at purchase based on current USD price
+                    const currentUsdPriceNum = parseFloat(usdPrice.replace(/,/g, '')) || 0;
+
+                    const { data, error } = await supabaseClient
+                        .from('btc_records')
+                        .insert([
+                            {
+                                user_id: userId, // Still good practice to record the user_id even if RLS is off
+                                nzd_spent: nzdSpentNum,
+                                btc_amount: btcAmountNum,
+                                usd_price_at_purchase: currentUsdPriceNum
+                            }
+                        ]);
+
+                    if (error) throw error;
+
+                    setNewNzdSpent('');
+                    setNewBtcAmount('');
+                    fetchBuyingRecords(); // Re-fetch records to update the list and summary
+                    console.log("[ADD RECORD] Record added successfully.");
+
+                } catch (error) {
+                    console.error('[ADD RECORD ERROR] Error adding record:', error);
+                    setRecordError(`Failed to add record: ${error.message}.`);
+                } finally {
+                    setRecordLoading(false);
+                }
+            };
+
+            // Handle deleting a record
+            const handleDeleteRecord = async (recordId) => {
+                if (!supabaseClient) {
+                    setRecordError('Supabase client not ready. Please wait.');
+                    return;
+                }
+                setRecordLoading(true);
+                setRecordError('');
+
+                try {
+                    const { error } = await supabaseClient
+                        .from('btc_records')
+                        .delete()
+                        .eq('id', recordId); // Delete the record by its ID
+
+                    if (error) throw error;
+
+                    fetchBuyingRecords(); // Re-fetch records to update the list and summary
+                    console.log("[DELETE RECORD] Record deleted successfully.");
+
+                } catch (error) {
+                    console.error('[DELETE RECORD ERROR] Error deleting record:', error);
+                    setRecordError(`Failed to delete record: ${error.message}.`);
+                } finally {
+                    setRecordLoading(false);
+                }
+            };
+
+            // Handle refresh button click
+            const handleRefresh = () => {
+                console.log("[UI] Refresh button clicked.");
+                fetchCurrentBitcoinPrice();
+                fetchBuyingRecords();
+            };
+
+            if (!isAuthReady) {
+                return (
+                    <div className="flex justify-center items-center min-h-screen bg-gray-100">
+                        <div className="loading-spinner"></div>
+                        <p className="ml-4 text-gray-700">Loading application...</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gray-100 p-4 sm:p-6 lg:p-8 flex flex-col items-center">
+                    <div className="container bg-white rounded-2xl shadow-xl p-6 sm:p-8 lg:p-10 w-full max-w-4xl border border-gray-200">
+                        <h1 className="text-4xl font-extrabold text-gray-900 mb-8 text-center">Bitcoin Tracker</h1>
+
+                        {/* Real-time Price Section */}
+                        <section className="mb-10 p-6 bg-blue-50 rounded-xl shadow-inner">
+                            <h2 className="text-2xl font-semibold text-blue-800 mb-4 text-center">Current Bitcoin Price</h2>
+                            {priceLoading ? (
+                                <div className="loading-spinner"></div>
+                            ) : priceError ? (
+                                <p className="error-message text-center">{priceError}</p>
+                            ) : (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 text-center">
+                                    <div>
+                                        <p className="text-lg text-gray-600 mb-1">USD</p>
+                                        <p className="text-4xl font-bold text-gray-900">${usdPrice}</p>
+                                    </div>
+                                    <div>
+                                        <p className="text-lg text-gray-600 mb-1">NZD</p>
+                                        <p className="text-4xl font-bold text-gray-900">${nzdPrice}</p>
+                                    </div>
+                                </div>
+                            )}
+                            <p className="text-sm text-gray-500 mt-4 text-center">Last updated: {lastUpdated}</p>
+                            <button
+                                onClick={handleRefresh}
+                                className="mt-6 w-full sm:w-auto px-8 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-300 ease-in-out transform hover:scale-105"
+                                disabled={priceLoading}
+                            >
+                                Refresh Prices & Records
+                            </button>
+                        </section>
+
+                        {/* Buying Record Section */}
+                        <section className="mb-10 p-6 bg-yellow-50 rounded-xl shadow-inner">
+                            <h2 className="text-2xl font-semibold text-yellow-800 mb-4 text-center">Record Your Bitcoin Purchases (NZD)</h2>
+                            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                                <input
+                                    type="number"
+                                    placeholder="NZD Spent"
+                                    value={newNzdSpent}
+                                    onChange={(e) => setNewNzdSpent(e.target.value)}
+                                    className="flex-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                                    step="0.01"
+                                />
+                                <input
+                                    type="number"
+                                    placeholder="BTC Amount Acquired"
+                                    value={newBtcAmount}
+                                    onChange={(e) => setNewBtcAmount(e.target.value)}
+                                    className="flex-1 p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-yellow-500"
+                                    step="0.00000001" // For small BTC amounts
+                                />
+                                <button
+                                    onClick={handleAddRecord}
+                                    className="px-8 py-3 bg-yellow-600 text-white font-semibold rounded-lg shadow-md hover:bg-yellow-700 transition duration-300 ease-in-out transform hover:scale-105"
+                                    disabled={recordLoading || !newNzdSpent || !newBtcAmount}
+                                >
+                                    Add Record
+                                </button>
+                            </div>
+
+                            {recordLoading ? (
+                                <div className="loading-spinner"></div>
+                            ) : recordError ? (
+                                <p className="error-message text-center">{recordError}</p>
+                            ) : (
+                                <>
+                                    <h3 className="text-xl font-medium text-gray-800 mb-4">Your Records:</h3>
+                                    {buyingRecords.length === 0 ? (
+                                        <p className="text-gray-600 text-center">No buying records yet. Add your first purchase!</p>
+                                    ) : (
+                                        <div className="overflow-x-auto">
+                                            <table className="min-w-full bg-white rounded-lg shadow-md">
+                                                <thead>
+                                                    <tr className="bg-gray-100 text-gray-600 uppercase text-sm leading-normal">
+                                                        <th className="py-3 px-6 text-left rounded-tl-lg">Date</th>
+                                                        <th className="py-3 px-6 text-left">NZD Spent</th>
+                                                        <th className="py-3 px-6 text-left">BTC Acquired</th>
+                                                        <th className="py-3 px-6 text-left">USD Price at Purchase</th>
+                                                        <th className="py-3 px-6 text-left rounded-tr-lg">Actions</th> {/* New column for delete button */}
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {buyingRecords.map((record) => (
+                                                        <tr key={record.id} className="border-b border-gray-200 hover:bg-gray-50">
+                                                            <td className="py-3 px-6 text-left whitespace-nowrap">
+                                                                {record.date ? new Date(record.date).toLocaleDateString('en-GB') : 'N/A'}
+                                                            </td>
+                                                            <td className="py-3 px-6 text-left">
+                                                                ${record.nzd_spent.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                            </td>
+                                                            <td className="py-3 px-6 text-left">
+                                                                {record.btc_amount.toFixed(8)} BTC
+                                                            </td>
+                                                            <td className="py-3 px-6 text-left">
+                                                                ${record.usd_price_at_purchase.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                            </td>
+                                                            <td className="py-3 px-6 text-left">
+                                                                <button
+                                                                    onClick={() => handleDeleteRecord(record.id)}
+                                                                    className="delete-button"
+                                                                    disabled={recordLoading}
+                                                                >
+                                                                    Delete
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </>
+                            )}
+                        </section>
+
+                        {/* Investment Summary Section */}
+                        <section className="p-6 bg-green-50 rounded-xl shadow-inner">
+                            <h2 className="text-2xl font-semibold text-green-800 mb-4 text-center">Investment Summary</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 text-center">
+                                <div>
+                                    <p className="text-lg text-gray-600 mb-1">Total NZD Spent</p>
+                                    <p className="text-3xl font-bold text-gray-900">
+                                        ${totalNzdSpent.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-lg text-gray-600 mb-1">Current Value (NZD)</p>
+                                    <p className="text-3xl font-bold text-gray-900">
+                                        ${currentValueNzd.toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </p>
+                                </div>
+                                <div>
+                                    <p className="text-lg text-gray-600 mb-1">Gain/Loss (%)</p>
+                                    <p className={`text-3xl font-bold ${gainLossPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {gainLossPercentage.toFixed(2)}%
+                                    </p>
+                                </div>
+                            </div>
+                            {userId && (
+                                <p className="text-xs text-gray-500 mt-6 text-center">
+                                    Your User ID: {userId} (for data persistence)
+                                </p>
+                            )}
+                        </section>
+                    </div>
+                </div>
+            );
+        };
+
+        // Render the React app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
